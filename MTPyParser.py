@@ -40,7 +40,7 @@ from menu_system import menu_system
 #### CONTROL VARS
 parser=OptionParser()
 debug = True
-filename = "C:/Program Files (x86)/MetaTrader 4 Administrator/38.76.4.43_4433.htm"
+filename = "C:/Program Files (x86)/MetaTrader 4 Administrator/38.76.4.43_443.htm"
 settingDict = {}
 
 # ###############################################################################        
@@ -147,7 +147,7 @@ class mtGroup:
 
             #Row 6 - Security Table
             row6 = row5.findNextSibling('tr')
-            #self.secTable = gSecTable(row6.contents[1]) #shld be a table.
+            self.securities = gSecTable(row6.contents[1]) #shld be a table.
 
             #Row 7 - Reports Settings
             row7 = row6.findNextSibling('tr')
@@ -186,10 +186,114 @@ class gSecTable:
                         "maximum deviation:", x pts.
     """
     def __init__(self, tablediv=0):
-         print tablediv
-         table = tablediv.findChild('table')
-         print table
-         sys.exit
+        self.securities = []
+        
+        table = tablediv.findChild('table')
+        #print table
+        tablerow = table.find('tr', class_="h") #this is the security header row
+        for s in table.findAll('tr', class_="g"): # each security starts with a g class row.
+            self.securities.append(gSecurity(s))
+
+        #sys.exit()
+
+    def getManualSecurities(self):
+        retL = []
+
+        for s in self.securities:
+            retL.append(s)
+
+    def isManual(self, name):
+        for s in self.securities:
+            if s.name == name:
+                if self.execStyle == "Auto":
+                    return False
+                elif self.execStyle == "Manual":
+                    return True
+                else:
+                    return True
+
+class gSecurity:
+    """
+    ooh, securities settings, for some specific group.
+    """
+
+    def __init__(self, sRow):
+        #print "roar..."
+        stds = sRow.find_all('td') #1
+        #row 1 (class g):
+        #                secName, enabled, trade, exec style, spread, close by, multi close, auto closeout, tradesizes, commission, taxes, agent
+        #                    tradesizes = double min - double max (double step)
+        #                    commission / agent = x.xxxxxx$/pt/% per lot
+        #            row 2:
+        #                "maximum deviation:", x pts.    
+
+        #4
+        self.name=stds[0].contents #always set.
+        self.enabled = False      #either True or False, always.  
+        self.trade= False         #if not enabled, then everything is unset/null.
+        self.execStyle="Auto"
+        self.spread = 0
+        self.closeBy=False
+        self.multiCloseBy=False
+        self.autoCloseOut=False
+        self.tradeSizes = {'min':0, 'max':0, 'step':0}
+        self.commission = {'quantity':0, 'style':'pts'}
+        self.agent = {'quantity':0, 'style':'pts'}
+        self.misc = ""
+        
+        if stds[1].contents[0] == u"Yes": #6
+            self.enabled = True
+            #print "Enabled"
+
+            if stds[2].contents[0] ==u"Yes":
+                self.trade=True
+                #print "Tradeable"
+            else:
+                self.trade= False
+
+            self.execStyle= ''.join(stds[3].contents)
+            #print self.execStyle
+
+            if stds[4].contents[0]==u"Default":
+                self.spread=0
+            else:
+                self.spread=int(stds[4].contents[0])
+            #print self.spread
+
+            self.closeBy = ''.join(stds[5].contents)
+            #print self.closeBy
+            
+            self.multiCloseBy=''.join(stds[6].contents)
+            #print self.multiCloseBy
+            
+            self.autoCloseOut=''.join(stds[7].contents)
+            #print self.autoCloseOut
+            
+            ts = ''.join(stds[8].contents)
+            tsl = ts.split(' ')
+            self.tradeSizes = {'min': tsl[0], 'max': tsl[2], 'step': tsl[3][1:-2]}
+            #print self.tradeSizes
+            
+            com =  ''.join(stds[9].contents)
+            coml = com.split()
+            self.commission = com
+            #self.commission = {'quantity':0, 'style':'pts'}
+            #print self.commission
+            
+            self.agentCom =   ''.join(stds[11].contents)
+            #self.agent = {'quantity':0, 'style':'pts'}
+            #print self.agentCom
+            
+            self.misc = ''.join(sRow.findNextSibling('tr').findAll('td')[1].contents)
+            #print self.misc
+
+            #Now, remember to count how many tries it takes to run this....
+            #6 tries to get this init working.
+            #7th try to get the gSecTable typo free.
+
+    def toString(self):
+        return "{} - Enabled? {} Trade? {}".format(self.name, self.enabled, self.trade)
+        
 
 # ###############################################################################        
 
@@ -388,7 +492,7 @@ def setUpMenu():
     """
     Sets up a menu so everything doesn't have to be coded into if-main.
     """
-    menuMTS = menu_system('Main Menu', '[Enter a letter]> ')   
+    menuMTS = menu_system('Main Menu', '[Enter a letter]> ')
     menuMTS.add_entry('N', 'Get Manager by Number')
     menuMTS.add_entry('G', 'Get Managers who can see group perm string')
     menuMTS.add_entry('q', 'choose `q\' to quit')
@@ -494,7 +598,19 @@ def compareCoverage(mlist, glist):
             resDict[g.name][m.num]= m.canViewGroup(g.name)
     return resDict
                 
-                
+
+def getManualGroups(glist):
+    st = glist[0].securities.securities
+    secs = {}
+    for s in st:
+        print ''.join(s.name)
+        secs[''.join(s.name)]=[]
+
+    for g in glist:
+        for s in g.securities.securities:
+            if s.enabled and s.trade and s.execStyle=="Manual":
+                secs[s.name].append(g.name)
+    return secs
     
 
 # ### One Main to Rule them all...
@@ -510,6 +626,11 @@ if __name__=="__main__":
         toScreen("The file {} does not exist".format(filename))
     mtSettings = MTSettings(filename, debug)
 
+    mgs = getManualGroups(mtSettings.getGroupList())
+    for s in mgs.keys():
+        print s
+        for g in mgs[s]:
+            print "\t{}".format(g)
 
     """
     m = mtSettings.getManagerGroupPermissions(manToFind=100)
@@ -527,7 +648,6 @@ if __name__=="__main__":
                 print "{}: {}".format(i, g.name)
         print "CANnot see {} of {} groups ({}%)".format(i, len(gl), i*100/len(gl))
     """
-    
     #print "\n\nLooking for managers who can see YDX-Std-USD-2"
     #for m in mtSettings.getManagerGroupPermissions(groupToMatch="YDX-Std-USD-2"):
     #    print "{:10} - {}".format(m.num, m.name)
