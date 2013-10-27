@@ -40,7 +40,7 @@ from menu_system import menu_system
 #### CONTROL VARS
 parser=OptionParser()
 debug = True
-filename = "C:/Program Files (x86)/MetaTrader 4 Administrator/38.76.4.43_443.htm"
+filename = "C:/Users/Alex/Documents/38.76.4.43_443.htm"
 settingDict = {}
 
 # ###############################################################################        
@@ -200,7 +200,9 @@ class gSecTable:
         retL = []
 
         for s in self.securities:
-            retL.append(s)
+            if s.isManual():
+                retL.append(s)
+        return retL
 
     def isManual(self, name):
         for s in self.securities:
@@ -227,8 +229,7 @@ class gSecurity:
         #            row 2:
         #                "maximum deviation:", x pts.    
 
-        #4
-        self.name=stds[0].contents #always set.
+        self.name=''.join(stds[0].contents) #always set.
         self.enabled = False      #either True or False, always.  
         self.trade= False         #if not enabled, then everything is unset/null.
         self.execStyle="Auto"
@@ -293,6 +294,14 @@ class gSecurity:
 
     def toString(self):
         return "{} - Enabled? {} Trade? {}".format(self.name, self.enabled, self.trade)
+
+    def isManual(self):
+        if self.execStyle == "Auto":
+            return False
+        elif self.execStyle == "Manual":
+            return True
+        else:
+            return True
         
 
 # ###############################################################################        
@@ -600,16 +609,22 @@ def compareCoverage(mlist, glist):
                 
 
 def getManualGroups(glist):
-    st = glist[0].securities.securities
+    st = glist[0].securities.securities #as a test, I am only looking at the first group, managers, which will be manual.
     secs = {}
     for s in st:
         print ''.join(s.name)
         secs[''.join(s.name)]=[]
 
     for g in glist:
-        for s in g.securities.securities:
-            if s.enabled and s.trade and s.execStyle=="Manual":
-                secs[s.name].append(g.name)
+        res = g.securities.getManualSecurities()
+        print res
+        if res != []:
+            for sec in res:
+                print sec.name
+                if sec.name in secs.keys():
+                    secs[sec.name].append(g)
+                else:
+                    secs[sec.name] = []
     return secs
     
 
@@ -628,9 +643,9 @@ if __name__=="__main__":
 
     mgs = getManualGroups(mtSettings.getGroupList())
     for s in mgs.keys():
-        print s
+        print "***{}***".format(s)
         for g in mgs[s]:
-            print "\t{}".format(g)
+            print "\t{}".format(g.name)
 
     """
     m = mtSettings.getManagerGroupPermissions(manToFind=100)
