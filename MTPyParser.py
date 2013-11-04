@@ -214,14 +214,28 @@ class gSecTable:
                 else:
                     return True
 
+    def getSecurityNames(self, enabled=False, trade=False):
+        if enabled and not trade:
+            return [s.name for s in self.securities if s.enabled]
+        elif trade:
+            return [s.name for s in self.securities if s.trade]
+        
+        return [s.name for s in self.securities]
+
+    def getByName(self, sName):
+        for s in self.securities:
+            if s.name ==  sName:
+                return s
+
+    
+    
+
 class gSecurity:
     """
     ooh, securities settings, for some specific group.
     """
 
-    def __init__(self, sRow):
-        #print "roar..."
-        stds = sRow.find_all('td') #1
+    def __init__(self, sRow=None):
         #row 1 (class g):
         #                secName, enabled, trade, exec style, spread, close by, multi close, auto closeout, tradesizes, commission, taxes, agent
         #                    tradesizes = double min - double max (double step)
@@ -229,7 +243,6 @@ class gSecurity:
         #            row 2:
         #                "maximum deviation:", x pts.    
 
-        self.name=''.join(stds[0].contents) #always set.
         self.enabled = False      #either True or False, always.  
         self.trade= False         #if not enabled, then everything is unset/null.
         self.execStyle="Auto"
@@ -241,56 +254,61 @@ class gSecurity:
         self.commission = {'quantity':0, 'style':'pts'}
         self.agent = {'quantity':0, 'style':'pts'}
         self.misc = ""
-        
-        if stds[1].contents[0] == u"Yes": #6
-            self.enabled = True
-            #print "Enabled"
 
-            if stds[2].contents[0] ==u"Yes":
-                self.trade=True
-                #print "Tradeable"
-            else:
-                self.trade= False
 
-            self.execStyle= ''.join(stds[3].contents)
-            #print self.execStyle
+        if sRow==None:
+            self.name = "None"
+        else:
+            stds = sRow.find_all('td')
+            self.name=''.join(stds[0].contents) #always set.
+            
+            if stds[1].contents[0] == u"Yes": #6
+                self.enabled = True
+                #print "Enabled"
 
-            if stds[4].contents[0]==u"Default":
-                self.spread=0
-            else:
-                self.spread=int(stds[4].contents[0])
-            #print self.spread
+                if stds[2].contents[0] ==u"Yes":
+                    self.trade=True
+                    #print "Tradeable"
+                else:
+                    self.trade= False
 
-            self.closeBy = ''.join(stds[5].contents)
-            #print self.closeBy
-            
-            self.multiCloseBy=''.join(stds[6].contents)
-            #print self.multiCloseBy
-            
-            self.autoCloseOut=''.join(stds[7].contents)
-            #print self.autoCloseOut
-            
-            ts = ''.join(stds[8].contents)
-            tsl = ts.split(' ')
-            self.tradeSizes = {'min': tsl[0], 'max': tsl[2], 'step': tsl[3][1:-2]}
-            #print self.tradeSizes
-            
-            com =  ''.join(stds[9].contents)
-            coml = com.split()
-            self.commission = com
-            #self.commission = {'quantity':0, 'style':'pts'}
-            #print self.commission
-            
-            self.agentCom =   ''.join(stds[11].contents)
-            #self.agent = {'quantity':0, 'style':'pts'}
-            #print self.agentCom
-            
-            self.misc = ''.join(sRow.findNextSibling('tr').findAll('td')[1].contents)
-            #print self.misc
+                self.execStyle= ''.join(stds[3].contents)
+                #print self.execStyle
 
-            #Now, remember to count how many tries it takes to run this....
-            #6 tries to get this init working.
-            #7th try to get the gSecTable typo free.
+                if stds[4].contents[0]==u"Default":
+                    self.spread=0
+                else:
+                    self.spread=int(stds[4].contents[0])
+                #print self.spread
+
+                self.closeBy = ''.join(stds[5].contents)
+                #print self.closeBy
+                
+                self.multiCloseBy=''.join(stds[6].contents)
+                #print self.multiCloseBy
+                
+                self.autoCloseOut=''.join(stds[7].contents)
+                #print self.autoCloseOut
+                
+                ts = ''.join(stds[8].contents)
+                tsl = ts.split(' ')
+                self.tradeSizes = {'min': tsl[0], 'max': tsl[2], 'step': tsl[3][1:-2]}
+                #print self.tradeSizes
+                
+                com =  ''.join(stds[9].contents)
+                coml = com.split()
+                self.commission = com
+                #self.commission = {'quantity':0, 'style':'pts'}
+                #print self.commission
+                
+                self.agentCom =   ''.join(stds[11].contents)
+                #self.agent = {'quantity':0, 'style':'pts'}
+                #print self.agentCom
+                
+                self.misc = ''.join(sRow.findNextSibling('tr').findAll('td')[1].contents)
+                #print self.misc
+
+
 
     def toString(self):
         return "{} - Enabled? {} Trade? {}".format(self.name, self.enabled, self.trade)
@@ -641,11 +659,22 @@ if __name__=="__main__":
         toScreen("The file {} does not exist".format(filename))
     mtSettings = MTSettings(filename, debug)
 
-    mgs = getManualGroups(mtSettings.getGroupList())
-    for s in mgs.keys():
-        print "***{}***".format(s)
-        for g in mgs[s]:
-            print "\t{}".format(g.name)
+
+    gl = mtSettings.getGroupList()
+    for g in gl:
+        gSecNames = g.securities.getSecurityNames(trade=True)
+        for sN in gSecNames:
+            if sN[0:5]=='Forex' or sN[:4]=='Gold':
+                s = g.securities.getByName(sN)
+                if s.tradeSizes['min']!='0.01':
+                    print "{}: {} min size {}".format( g.name, sN, s.tradeSizes['min'] )
+    
+
+    #mgs = getManualGroups(mtSettings.getGroupList())
+    #for s in mgs.keys():
+    #    print "***{}***".format(s)
+    #    for g in mgs[s]:
+    #        print "\t{}".format(g.name)
 
     """
     m = mtSettings.getManagerGroupPermissions(manToFind=100)
