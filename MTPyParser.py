@@ -40,7 +40,7 @@ from menu_system import menu_system
 #### CONTROL VARS
 parser=OptionParser()
 debug = True
-filename = "C:/Users/Alex/Documents/38.76.4.43_443.htm"
+filename = "C:/Users/Alex/Documents/38.76.4.43_443.htm" #"C:/Users/Alex/Documents/38.76.4.43_443.htm"
 settingDict = {}
 
 # ###############################################################################        
@@ -57,7 +57,7 @@ class Manager:
             self.num = int(cols[0].renderContents().strip())
             self.name = cols[1].renderContents().strip()
             self.gPerms = cols[3].renderContents().strip()
-            self.roles= bsRow.findNext('tr').contents[1].text.strip().split(',')
+            self.roles= [r.strip() for r in bsRow.findNext('tr').contents[1].text.split(',')]
         else:
             print "I should raise an error here"
             sys.exit()
@@ -72,6 +72,11 @@ class Manager:
     def csvRepr(self):
         return "{};{};{};{}".format(self.name, self.num, self.gPerms, self.roles)
 
+
+    def isDealer(self):
+        if u"dealer" in self.roles:
+            return True
+        return False
 
     def canViewGroup(self, groupName):
         """
@@ -90,6 +95,15 @@ class Manager:
                     match = True
                     #toScreen("\t{} matches {}.  Looking good.".format(gp, groupName), 1)
         return match
+
+    def isAdmin(self):
+        """
+        Returns true if the manager is an admin.
+        """
+
+        if 'admin' in self.roles:
+            return True
+            
 
 # ###############################################################################        
 
@@ -154,11 +168,11 @@ class mtGroup:
             self.reports = row7.contents[1].text.strip()
             
             #Row 8 - Signature String
-            row8 = row7.findNextSibling('tr')
-            if row8.contents[0].text.strip() == "Signature:":
-                self.signature= row8.contents[1].text.strip()
-            else:
-                self.signature = ""
+            #row8 = row7.findNextSibling('tr')
+            #if row8.contents[0].text.strip() == "Signature:":
+            #    self.signature= row8.contents[1].text.strip()
+            #else:
+            #    self.signature = ""
         else:
             print "I should raise an error here"
             sys.exit()
@@ -172,6 +186,48 @@ class mtGroup:
                             )
         return retStr
 
+
+# ###############################################################################        
+
+class mtSymbol:
+    """
+    Symbol - some tradeable pair or index
+    """
+    def __init__(self, symRow=None):
+        """
+        Symbol row.
+        For now, all that matters is the first row:
+        name, desc
+        DIGITS <--- most important.
+        """
+        #for now, just assume you got the right row.
+        
+        if symRow != 0:
+            cols = symRow.findAll('td')
+            nameData = cols[0].renderContents().strip().split(',')
+            self.name = nameData[0][3:-4]
+            self.desc = ""
+            if len(nameData)>1:
+                self.desc = cols[0].renderContents().strip().split(',')[1]
+            #self.baseSym = self.name[:6]
+            self.digits= int(cols[7].text.strip())
+
+            #print "{} has {} digits!".format(self.name, self.digits)
+        else:
+            print "I should raise an error here"
+            sys.exit()
+
+    def getDigits(self):
+        if self.digits < 0:
+            self.digits=0
+        return self.digits
+
+
+
+
+
+
+        
 # ###############################################################################        
 
 class gSecTable:
@@ -201,6 +257,14 @@ class gSecTable:
 
         for s in self.securities:
             if s.isManual():
+                retL.append(s)
+        return retL
+
+    def getAutoSecurities(self):
+        retL =  []
+
+        for s in self.securities:
+            if s.isAuto():
                 retL.append(s)
         return retL
 
@@ -321,6 +385,15 @@ class gSecurity:
         else:
             return True
         
+    def isAuto(self):
+        if self.enabled:
+            if self.execStyle == "Auto":
+                return True
+        return False
+            
+
+
+
 
 # ###############################################################################        
 
@@ -329,10 +402,12 @@ class MTSettings:
         self.bs = BeautifulSoup(open(filename, 'r'))
         self.managerTable = None
         self.groupTable = None
+        self.symTable =None
         self.common = None
 
         self.managers = self.getAllManagers()
-        #self.groups = self.getAllGroups()
+        self.groups = self.getAllGroups()
+        self.symbols = self.getAllSymbols()
         
 
     def importCommon(self):
@@ -367,6 +442,35 @@ class MTSettings:
                         toScreen(tableTitle.text,1)
                         self.groupTable = table
         print self.groupTable.find('td', class_="lb").text
+
+    def importSymbols(self):
+        symTable = None
+        for table in self.bs.find_all('table'):
+            if table.parent.name=='br':
+                tableTitle = table.find('td', class_="lb")
+                if tableTitle is not None:
+                    if tableTitle.text[0:7] == "Symbols":  
+                        toScreen("Found it",1)
+                        toScreen(tableTitle.text,1)
+                        self.symTable = table
+        print self.symTable.find('td', class_="lb").text
+
+
+    def getAllSymbols(self):
+        """
+        Returns a a list of symbol objects.
+        """
+
+        if self.symTable == None:
+            self.importSymbols()
+
+        symList = []
+
+        for row in self.symTable.find_all('tr', class_='g'):
+            if row.parent.parent.name == 'br':
+                symList.append(mtSymbol(row))
+
+        return symList
 
     def getAllGroups(self):
         """
@@ -484,6 +588,19 @@ class MTSettings:
         for man in self.getAllManagers():
             csvFile.write("{}\n".format(man.csvRepr()))
         csvFile.close()
+
+
+    def getAdmins(self):
+        if self.managerTable == None:
+            self.importManagers()
+
+        admins = []
+
+        for m in self.managers:
+            if m.isAdmin():
+                admins.append(m)
+
+        return admins
 
 
 # ###############################################################################        
@@ -646,20 +763,15 @@ def getManualGroups(glist):
     return secs
     
 
-# ### One Main to Rule them all...
-if __name__=="__main__":
-    #useOptParser()
-    toScreen("Args Parsed")
-    toScreen("You are seeing this because verbose is on", 1)
-    toScreen("Filename = %s"%filename)
-    
-    if os.path.exists(filename):
-        toScreen("The Filename is good.", 1)
-    else:
-        toScreen("The file {} does not exist".format(filename))
-    mtSettings = MTSettings(filename, debug)
+def printAdmins(mtSettings):
+    print "ADMINS ARE"
+    for m in mtSettings.getAdmins():
+        print "{} - {}".format(m.num, m.name)
 
-
+def findAllGroupsWrongMinSizes(mtSettings):
+    """
+    Prints any group where Gold* or Forex* doesn't have min size 0.01
+    """
     gl = mtSettings.getGroupList()
     for g in gl:
         gSecNames = g.securities.getSecurityNames(trade=True)
@@ -668,33 +780,176 @@ if __name__=="__main__":
                 s = g.securities.getByName(sN)
                 if s.tradeSizes['min']!='0.01':
                     print "{}: {} min size {}".format( g.name, sN, s.tradeSizes['min'] )
+
+def printManualGroups(mtSettings):
+    mgs = getManualGroups(mtSettings.getGroupList())
+    for s in mgs.keys():
+        print "***{}***".format(s)
+        for g in mgs[s]:
+            print "\t{}".format(g.name)
+
+
+def printAutoGroups(mtS):
+    grps = getAutoGroups(mtS.getGroupList("!demo*,!*umam*,*"))
+
+    for g in grps.keys():
+        secNames = [s.name for s in grps[g]]
+        print "{} - {}".format(g, ', '.join(secNames))
+                        
+
+def getAutoGroups(glist):
+    autoGroups={}
+
+    for g in glist:
+        res = g.securities.getAutoSecurities()
+        if res!=[]:
+            for sec in res:
+                #print sec.name
+                if sec.name[:2] =="CFD":
+                    continue
+                else:
+                    autoGroups[g.name]=g.securities.getAutoSecurities()
+                    break
+    return autoGroups
+
+
+def printAutoCFDGroups(mtS):
+    grps = getAutoCFDGroups(mtS.getGroupList("!demo*,!*umam*,*"))
+    #print grps
+    for g in grps.keys():
+        secNames = [s.name for s in grps[g]]
+        print "{} - {}".format(g, ', '.join(secNames))
+
+def getAutoCFDGroups(glist):
+    autoGroups={}
+
+    for g in glist:
+        res = g.securities.getAutoSecurities()
+        #print res
+        if res!=[]:
+            for sec in res:
+                #print sec.name[:3]
+                if sec.name[:3] !="CFD":
+                    continue
+                else:
+                    autoGroups[g.name]=g.securities.getAutoSecurities()
+                    break
+    return autoGroups
+
+
+
+def printAutoGroups(mtS):
+    grps = getAutoGroups(mtS.getGroupList("!demo*,!*umam*,*"))
+
+    for g in grps.keys():
+        secNames = [s.name for s in grps[g]]
+        print "{} - {}".format(g, ', '.join(secNames))
+
+
+def printManualCFDGroups(mtS):
+    mgs = getManualCFDGroups(mtS.getGroupList("!demo*,!*umam*,*"))
+    #print mgs
+    for s in mgs.keys():
+        print "***{}***".format(s)
+        for s in mgs[s]:
+            print "\t{}".format(s)
     
 
-    #mgs = getManualGroups(mtSettings.getGroupList())
-    #for s in mgs.keys():
-    #    print "***{}***".format(s)
-    #    for g in mgs[s]:
-    #        print "\t{}".format(g.name)
+def getManualCFDGroups(glist):
+    manGroups={}
+
+    for g in glist:
+        res = g.securities.getManualSecurities()
+        if res!=[]:
+            for sec in res:
+                #print sec.name
+                if sec.name[:3] =="CFD":
+                    manGroups[g.name]=sec.name
+                    break
+
+    return manGroups
+
+def printGroupsWithSecurityEnabled(mtS, secName, gPerm="!demo,!*umam*,!manager,!datacenter,*"):
+    grps = getGroupsWithSecurityEnabled(mtS.getGroupList(gPerm), secName)
+
+    gnames = [g.name for g in grps]
+    
+    print ','.join(gnames)
+        
+
+
+def getGroupsWithSecurityEnabled(glist, secName):
+    grps = []
+    for g in glist:
+        if secName in g.securities.getSecurityNames(enabled=True, trade=False):
+            #print "{} was found enabled for trade in {}".format(secName, g.name)
+            grps.append(g)
+    return grps
+
+    
+
+# ### One Main to Rule them all...
+if __name__=="__main__":
+    #useOptParser()
+    toScreen("Args Parsed")
+    toScreen("You are seeing this because verbose is on", 1)
+    toScreen("Filename = %s"%filename)
+
+    debug=False
+    
+    if os.path.exists(filename):
+        toScreen("The Filename is good.", 1)
+    else:
+        toScreen("The file {} does not exist".format(filename))
+    mtSettings = MTSettings(filename, debug)
+
+    print "I appear to have symbols?"
+    """
+    sn="GoldNOW"
+    print "Groups with {} enabled.".format(sn)
+    printGroupsWithSecurityEnabled(mtSettings, sn, gPerm="!manager,!datacenter,*")
+    """
+
+    #print "================================ Manual CFD Groups ================================"
+    #printManualCFDGroups(mtSettings)
+
+    #print "================================  AUTO CFD Groups  ================================"
+    #printAutoCFDGroups(mtSettings)
+
+
+    #printAutoGroups(mtSettings)
+
+    #ms = mtSettings.getManagerGroupPermissions(groupToMatch="Micro-SNF-USD")
+    #for m in ms:
+    #    print m.num
 
     """
-    m = mtSettings.getManagerGroupPermissions(manToFind=100)
+    m = mtSettings.getManagerGroupPermissions(manToFind=103)
     if m == 0:
         print "No match"
     else:
         print m.toString()
         gl = mtSettings.getGroupList()
 
-        print "CANnot SEE GROUPS"
-        i=0
+        print "CAN SEE GROUPS"
+        #i=0
+        viewGroups = []
         for g in gl:
-            if not m.canViewGroup(g.name):
-                i=i+1
-                print "{}: {}".format(i, g.name)
-        print "CANnot see {} of {} groups ({}%)".format(i, len(gl), i*100/len(gl))
+            if m.canViewGroup(g.name):
+                print g.name
+                viewGroups.append(g.name)
+                #i=i+1
+                #print "{}: {}".format(i, g.name)
+        print viewGroups        
+        #print "CANnot see {} of {} groups ({}%)".format(i, len(gl), i*100/len(gl))
+    
     """
-    #print "\n\nLooking for managers who can see YDX-Std-USD-2"
-    #for m in mtSettings.getManagerGroupPermissions(groupToMatch="YDX-Std-USD-2"):
-    #    print "{:10} - {}".format(m.num, m.name)
+    #print "\n\nLooking for managers who can see Iam-Stnd-2"
+    #for m in mtSettings.getManagerGroupPermissions(groupToMatch="Iam-Stnd-2"):
+    #    if m.isDealer():
+    #        print "Dealer {:10} - {}".format(m.num, m.name)
+
+    
 
     #debug=False
 
@@ -719,7 +974,13 @@ if __name__=="__main__":
         if m.num == 100 or m.num==101:
             print m.toString()
     """
- 
+
+    #print comma separated list of groups with quotes around group names.
+    gl = mtSettings.getGroupList()
+    print "("
+    for g in gl:
+        print "\'{}\',".format(g.name)
+    print ")"
 
     
     
@@ -743,9 +1004,9 @@ if __name__=="__main__":
     if not dcFlag:
         print "No double coverages"
     """
-    while True:
-        if execMenuChoice(setUpMenu(), mtSettings)=="Q":
-            break;
+    #while True:
+    #    if execMenuChoice(setUpMenu(), mtSettings)=="Q":
+    #        break;
     
     #print gl[0].secTable    
     #importSettings()
