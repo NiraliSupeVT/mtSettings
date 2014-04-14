@@ -923,7 +923,7 @@ if __name__=="__main__":
     #for m in ms:
     #    print m.num
 
-    """
+    
     m = mtSettings.getManagerGroupPermissions(manToFind=103)
     if m == 0:
         print "No match"
@@ -931,7 +931,7 @@ if __name__=="__main__":
         print m.toString()
         gl = mtSettings.getGroupList()
 
-        print "CAN SEE GROUPS"
+        print "103 CAN SEE GROUPS"
         #i=0
         viewGroups = []
         for g in gl:
@@ -940,10 +940,35 @@ if __name__=="__main__":
                 viewGroups.append(g.name)
                 #i=i+1
                 #print "{}: {}".format(i, g.name)
-        print viewGroups        
+        #print "103 can see:"
+        #print viewGroups
+
+        print "==============================="
+
+    m = mtSettings.getManagerGroupPermissions(manToFind=305)
+    if m == 0:
+        print "No match"
+    else:
+        print m.toString()
+        gl = mtSettings.getGroupList()
+
+        print "305 CAN SEE GROUPS"
+        #i=0
+        viewGroups = []
+        for g in gl:
+            if m.canViewGroup(g.name):
+                print g.name
+                viewGroups.append(g.name)
+                #i=i+1
+                #print "{}: {}".format(i, g.name)
+        #print "305 can see:"
+        #print viewGroups
+
+
+
         #print "CANnot see {} of {} groups ({}%)".format(i, len(gl), i*100/len(gl))
     
-    """
+    
     #print "\n\nLooking for managers who can see Iam-Stnd-2"
     #for m in mtSettings.getManagerGroupPermissions(groupToMatch="Iam-Stnd-2"):
     #    if m.isDealer():
@@ -975,13 +1000,14 @@ if __name__=="__main__":
             print m.toString()
     """
 
+    """
     #print comma separated list of groups with quotes around group names.
     gl = mtSettings.getGroupList()
     print "("
     for g in gl:
         print "\'{}\',".format(g.name)
     print ")"
-
+    """
     
     
     # #########
