@@ -40,7 +40,7 @@ from menu_system import menu_system
 #### CONTROL VARS
 parser=OptionParser()
 debug = True
-filename = "C:/Users/Alex/Documents/38.76.4.43_443.htm" #"C:/Users/Alex/Documents/38.76.4.43_443.htm"
+filename = "C:/Program Files (x86)/MetaTrader 4 Administrator/38.76.4.43_443.htm" #"C:/Users/Alex/Documents/38.76.4.43_443.htm"
 settingDict = {}
 
 # ###############################################################################        
@@ -133,6 +133,7 @@ class mtGroup:
         row 7 - Reports, list with '.' separator
         row 8 - Signature, multi line string          
         """
+        
         if bsRow != 0:
             cols = bsRow.findAll('td')
             self.name = cols[0].renderContents().strip()
@@ -185,6 +186,12 @@ class mtGroup:
                             self.perm1, self.perm2, self.archiving, self.margins, self.reports, self.signature
                             )
         return retStr
+        
+    def getManualSecurities(self):
+        return self.securities.getManualSecurities()
+        
+    def getAutoSecurities(self):
+        return self.securities.getAutoSecurities()
 
 
 # ###############################################################################        
@@ -221,12 +228,6 @@ class mtSymbol:
         if self.digits < 0:
             self.digits=0
         return self.digits
-
-
-
-
-
-
         
 # ###############################################################################        
 
@@ -256,7 +257,7 @@ class gSecTable:
         retL = []
 
         for s in self.securities:
-            if s.isManual():
+            if s.isTradable() and s.isManual():
                 retL.append(s)
         return retL
 
@@ -264,19 +265,18 @@ class gSecTable:
         retL =  []
 
         for s in self.securities:
-            if s.isAuto():
+            if s.isTradable() and s.isAuto():
                 retL.append(s)
         return retL
 
     def isManual(self, name):
         for s in self.securities:
-            if s.name == name:
-                if self.execStyle == "Auto":
-                    return False
-                elif self.execStyle == "Manual":
-                    return True
-                else:
-                    return True
+            return s.isManual()
+
+    def isTradable(self, name):
+        for s in self.securities:
+            if s.name==name:
+                return s.isTradable()
 
     def getSecurityNames(self, enabled=False, trade=False):
         if enabled and not trade:
@@ -372,10 +372,14 @@ class gSecurity:
                 self.misc = ''.join(sRow.findNextSibling('tr').findAll('td')[1].contents)
                 #print self.misc
 
-
-
     def toString(self):
         return "{} - Enabled? {} Trade? {}".format(self.name, self.enabled, self.trade)
+
+    def isEnabled(self):
+        return self.enabled
+        
+    def isTradable(self):
+        return self.trade
 
     def isManual(self):
         if self.execStyle == "Auto":
@@ -744,22 +748,26 @@ def compareCoverage(mlist, glist):
                 
 
 def getManualGroups(glist):
-    st = glist[0].securities.securities #as a test, I am only looking at the first group, managers, which will be manual.
-    secs = {}
-    for s in st:
-        print ''.join(s.name)
-        secs[''.join(s.name)]=[]
-
+    manGrps = {}
+    
     for g in glist:
-        res = g.securities.getManualSecurities()
-        print res
-        if res != []:
-            for sec in res:
-                print sec.name
-                if sec.name in secs.keys():
-                    secs[sec.name].append(g)
-                else:
-                    secs[sec.name] = []
+        st = g.securities.securities #as a test, I am only looking at the first group, managers, which will be manual.
+        msecs = {}  
+        
+        for s in st:
+            print ''.join(s.name)
+            secs[''.join(s.name)]=[]
+
+        for g in glist:
+            res = g.securities.getManualSecurities()
+            print res
+            if res != []:
+                for sec in res:
+                    print sec.name
+                    if sec.name in secs.keys():
+                        secs[sec.name].append(g)
+                    else:
+                        secs[sec.name] = []
     return secs
     
 
@@ -923,7 +931,7 @@ if __name__=="__main__":
     #for m in ms:
     #    print m.num
 
-    
+    """
     m = mtSettings.getManagerGroupPermissions(manToFind=103)
     if m == 0:
         print "No match"
@@ -931,38 +939,59 @@ if __name__=="__main__":
         print m.toString()
         gl = mtSettings.getGroupList()
 
+        #print "103 CAN SEE GROUPS"
+        #i=0
+        viewGroups = []
+        for g in gl:
+            if m.canViewGroup(g.name):
+                #print g.name
+                viewGroups.append(g.name)
+                #i=i+1
+                #print "{}: {}".format(i, g.name)
+        print "103 can see:"
+        print viewGroups
+
+        print "==============================="
+    """
+    
+    m = mtSettings.getManagerGroupPermissions(manToFind=103)
+    if m == 0:
+        print "No match"
+    else:
+        print m.toString()
+        gl = mtSettings.getGroupList(",!*umam_*,!*demo*,!*gent*,!*detached*,!*ignals*,!PTFX*,*")
+
         print "103 CAN SEE GROUPS"
         #i=0
         viewGroups = []
         for g in gl:
             if m.canViewGroup(g.name):
-                print g.name
-                viewGroups.append(g.name)
+                #print g.name
+                viewGroups.append(g)
                 #i=i+1
                 #print "{}: {}".format(i, g.name)
-        #print "103 can see:"
-        #print viewGroups
+        print "103 can see:"
+        print [g.name for g in viewGroups]
 
-        print "==============================="
-
-    m = mtSettings.getManagerGroupPermissions(manToFind=305)
-    if m == 0:
-        print "No match"
-    else:
-        print m.toString()
-        gl = mtSettings.getGroupList()
-
-        print "305 CAN SEE GROUPS"
-        #i=0
-        viewGroups = []
-        for g in gl:
-            if m.canViewGroup(g.name):
-                print g.name
-                viewGroups.append(g.name)
-                #i=i+1
-                #print "{}: {}".format(i, g.name)
-        #print "305 can see:"
-        #print viewGroups
+        print "==============================================="
+        print "Groups with AUTO securities that are not CFDs!"
+        print "==============================================="
+        autoGroups = [] # an array of tuples: (groupName, AutoSecurity)
+        for g in viewGroups:
+            sT = g.getAutoSecurities()
+            isOK = True #If ANYTHING is tradable and auto exec style, other than CFDs, it is not OK.
+            for s in sT:  
+                if s.name[0:3]=="CFD":
+                    continue
+                else: 
+                    isOK = False
+                    info = (g.name, s.name)
+                    autoGroups.append( info )
+                    print "{} has {} set auto.".format(g.name, s.name)
+                    
+        print "BAD GROUPS ARE:"
+        print autoGroups
+            
 
 
 
@@ -1032,8 +1061,7 @@ if __name__=="__main__":
     """
     #while True:
     #    if execMenuChoice(setUpMenu(), mtSettings)=="Q":
-    #        break;
-    
+    #        break;    
     #print gl[0].secTable    
     #importSettings()
     toScreen("Goodbye.")
