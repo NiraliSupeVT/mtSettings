@@ -31,15 +31,15 @@ Ultimately, we will be able to:
 """
 
 #### IMPORTS
-from optparse import OptionParser
+#from optparse import OptionParser
 import os, fnmatch, sys
 from bs4 import BeautifulSoup
-from menu_system import menu_system
+#from menu_system import menu_system
 
 
 #### CONTROL VARS
-parser=OptionParser()
-debug = True
+#parser=OptionParser()
+debug = False
 filename = "C:/Program Files (x86)/MetaTrader 4 Administrator/38.76.4.43_443.htm" #"C:/Users/Alex/Documents/38.76.4.43_443.htm"
 settingDict = {}
 
@@ -59,7 +59,7 @@ class Manager:
             self.gPerms = cols[3].renderContents().strip()
             self.roles= [r.strip() for r in bsRow.findNext('tr').contents[1].text.split(',')]
         else:
-            print "I should raise an error here"
+            toScreen("I should raise an error here",0)
             sys.exit()
 
 
@@ -166,14 +166,33 @@ class mtGroup:
 
             #Row 7 - Reports Settings
             row7 = row6.findNextSibling('tr')
-            self.reports = row7.contents[1].text.strip()
+            if row7.contents[0].text.strip()[:3] == "Sym":  #this group hascustom swaps.
+                row7 = row7.findNextSibling('tr')
+                if row7.contents[0].text.strip()[:3] != "Rep": #crap. This should have said "Reports"
+                    toScreen(row7.contents[0].text.strip(),0 )
+                    sys.exit()
+            self.reportsEnabled = False
             
-            #Row 8 - Signature String
-            #row8 = row7.findNextSibling('tr')
-            #if row8.contents[0].text.strip() == "Signature:":
-            #    self.signature= row8.contents[1].text.strip()
-            #else:
-            #    self.signature = ""
+            reports = row7.contents[1].text.strip()
+            #print "REPORTS ENABLED? %s"%reports[0:2]
+            if reports[0:2]=="En":
+                self.reportsEnabled=True
+                #print reports[reports.find(':')+1:].split(' ')
+                self.smtpSrv = reports[reports.find(':')+1:].split(' ')[1].rstrip('.')
+                self.smtpLogin = reports[reports.rfind(':')+1:-1].strip()                
+            else:
+                self.reportsEnabled=False
+                #print self.name, reports
+                
+            if self.reportsEnabled:
+                #Row 8 - Signature String
+                row8 = row7.findNextSibling('tr')
+                if row8.contents[0].text.strip() == "Signature:":
+                    self.signature= row8.contents[1].text.strip()
+                    #print self.signature
+                else:
+                    toScreen("{} {} {}"%(self.name, "Signature?", row8.contents[0].text.strip()),1)
+                    self.signature = ""
         else:
             print "I should raise an error here"
             sys.exit()
@@ -221,7 +240,7 @@ class mtSymbol:
 
             #print "{} has {} digits!".format(self.name, self.digits)
         else:
-            print "I should raise an error here"
+            toScreen("I should raise an error here",0)
             sys.exit()
 
     def getDigits(self):
@@ -246,7 +265,7 @@ class gSecTable:
         self.securities = []
         
         table = tablediv.findChild('table')
-        #print table
+        
         tablerow = table.find('tr', class_="h") #this is the security header row
         for s in table.findAll('tr', class_="g"): # each security starts with a g class row.
             self.securities.append(gSecurity(s))
@@ -287,11 +306,35 @@ class gSecTable:
         return [s.name for s in self.securities]
 
     def getByName(self, sName):
+        #first, find an exact match
         for s in self.securities:
             if s.name ==  sName:
                 return s
 
-    
+    def getTradeableByName(self, sName):
+        for s in self.securities:
+            if s.isTradeable() and s.name.find(sName)>-1:
+                return s
+
+    def getEnabledByName(self, sName):
+        for s in self.securities:
+            if s.isEnabled() and s.name.find(sName)>-1:
+                return s
+
+    def getAllTradeableByName(self, sName):
+        secs = []
+        for s in self.securities:
+            if s.isTradeable() and s.name.find(sName)>-1:
+                secs.append(s)
+        return secs
+
+    def getAllEnabledByName(self, sName):
+        secs = []
+        for s in self.securities:
+            if s.isEnabled() and s.name.find(sName)>-1:
+                secs.append(s)
+        return secs
+        
     
 
 class gSecurity:
@@ -356,16 +399,28 @@ class gSecurity:
                 
                 ts = ''.join(stds[8].contents)
                 tsl = ts.split(' ')
-                self.tradeSizes = {'min': tsl[0], 'max': tsl[2], 'step': tsl[3][1:-2]}
+                self.tradeSizes = {'min': tsl[0], 'max': tsl[2], 'step': tsl[3][1:-1]}
                 #print self.tradeSizes
                 
                 com =  ''.join(stds[9].contents)
-                coml = com.split()
-                self.commission = com
+                splitIndex = com.find('pt')
+                if splitIndex <0:
+                    splitIndex=com.find('$')
+                if splitIndex <0:
+                    splitIndex=com.find('%')
+                self.commission['quantity'] = com[:splitIndex]
+                self.commission['style'] = com[splitIndex:]
                 #self.commission = {'quantity':0, 'style':'pts'}
                 #print self.commission
                 
-                self.agentCom =   ''.join(stds[11].contents)
+                agent =   ''.join(stds[11].contents)
+                splitIndex = agent.find('pt')
+                if splitIndex <0:
+                    splitIndex=agent.find('$')
+                if splitIndex <0:
+                    splitIndex=agent.find('%')
+                self.agent['quantity']=agent[:splitIndex]
+                self.agent['style']=agent[splitIndex:]
                 #self.agent = {'quantity':0, 'style':'pts'}
                 #print self.agentCom
                 
@@ -378,7 +433,7 @@ class gSecurity:
     def isEnabled(self):
         return self.enabled
         
-    def isTradable(self):
+    def isTradeable(self):
         return self.trade
 
     def isManual(self):
@@ -431,7 +486,7 @@ class MTSettings:
                     if tableTitle.text[0:8] == "Managers":  
                         toScreen("Found it",1)
                         self.managerTable = table
-        print self.managerTable.find('td', class_="lb").text
+        toScreen(self.managerTable.find('td', class_="lb").text, 1)
         
 
 
@@ -445,7 +500,7 @@ class MTSettings:
                         toScreen("Found it",1)
                         toScreen(tableTitle.text,1)
                         self.groupTable = table
-        print self.groupTable.find('td', class_="lb").text
+        toScreen(self.groupTable.find('td', class_="lb").text, 1)
 
     def importSymbols(self):
         symTable = None
@@ -457,7 +512,7 @@ class MTSettings:
                         toScreen("Found it",1)
                         toScreen(tableTitle.text,1)
                         self.symTable = table
-        print self.symTable.find('td', class_="lb").text
+        toScreen(self.symTable.find('td', class_="lb").text, 1)
 
 
     def getAllSymbols(self):
@@ -899,9 +954,9 @@ def getGroupsWithSecurityEnabled(glist, secName):
 # ### One Main to Rule them all...
 if __name__=="__main__":
     #useOptParser()
-    toScreen("Args Parsed")
     toScreen("You are seeing this because verbose is on", 1)
-    toScreen("Filename = %s"%filename)
+    toScreen("Args Parsed",1)
+    toScreen("Filename = %s"%filename,1)
 
     debug=False
     
@@ -911,12 +966,46 @@ if __name__=="__main__":
         toScreen("The file {} does not exist".format(filename))
     mtSettings = MTSettings(filename, debug)
 
-    print "I appear to have symbols?"
     """
     sn="GoldNOW"
     print "Groups with {} enabled.".format(sn)
     printGroupsWithSecurityEnabled(mtSettings, sn, gPerm="!manager,!datacenter,*")
     """
+    """
+    print "================== Groups without Reporting Enabled ================== "
+    gl = mtSettings.getGroupList(",*,")
+    for g in gl:
+        if not g.reportsEnabled:
+            print g.name, g.reportsEnabled
+    print "================== Groups and their Forex ================== "
+    gl = mtSettings.getGroupList(",*,")
+    grpsForex = []
+    for g in gl:
+        s= g.securities.getTradeableByName("Forex")
+        if s is not None:
+            #print g.name, s.name
+            grpsForex.append([g, s])
+        else:
+            s= g.securities.getEnabledByName("Forex")
+            if s is not None:
+                grpsForex.append([g, s])
+                #print g.name, s.name, "Just enabled"
+            #else:
+            #    print g.name, "No enabled forex security"
+    #print grpsForex
+    for i in grpsForex:
+        print "{:16} | {:10} | {:5} | {:20} | {:20}".format(i[0].name, i[1].name, i[1].spread, i[1].commission, i[1].agentCom)
+
+    #print to file.
+    commissioninfo = open("GrpSecComInfo.csv", 'w')
+    commissioninfo.write("{}, {}, {}, {}, {}\n".format("Group", "Forex Type", "Markup", "Std Com", "Agent Com"))
+    for i in grpsForex:
+        commissioninfo.write("{}, {}, {}, {}, {}\n".format(i[0].name, i[1].name, i[1].spread, i[1].commission, i[1].agentCom))
+    print commissioninfo.name
+    commissioninfo.close()
+    """
+
+    
 
     #print "================================ Manual CFD Groups ================================"
     #printManualCFDGroups(mtSettings)
@@ -930,8 +1019,7 @@ if __name__=="__main__":
     #ms = mtSettings.getManagerGroupPermissions(groupToMatch="Micro-SNF-USD")
     #for m in ms:
     #    print m.num
-
-    """
+    
     m = mtSettings.getManagerGroupPermissions(manToFind=103)
     if m == 0:
         print "No match"
@@ -939,21 +1027,30 @@ if __name__=="__main__":
         print m.toString()
         gl = mtSettings.getGroupList()
 
-        #print "103 CAN SEE GROUPS"
-        #i=0
         viewGroups = []
+        grpCurrencies = open("GroupCurrencies.csv", 'w')
+        grpCurrencies.write("%s,%s,GallantFX RDS Live MT4 1\n"%("groupName", "groupCur"))
+
+        #notViewGroups = []
         for g in gl:
             if m.canViewGroup(g.name):
                 #print g.name
-                viewGroups.append(g.name)
+                print "%s,%s,GallantFX RDS Live MT4 1\n"%(g.name, g.currency)
+                grpCurrencies.write("%s,%s,GallantFX RDS Live MT4 1\n"%(g.name, g.currency))
+                #viewGroups.append(g.name)
                 #i=i+1
                 #print "{}: {}".format(i, g.name)
-        print "103 can see:"
-        print viewGroups
-
-        print "==============================="
-    """
+            #else:
+            #    notViewGroups.append(g.name)
+        grpCurrencies.close()
+        #print "103 can see:"
+        #print sorted(viewGroups)
+        #print "==============================="
+        #print "505 can NOT see:"
+        #print sorted(notViewGroups)
     
+    
+    """
     m = mtSettings.getManagerGroupPermissions(manToFind=103)
     if m == 0:
         print "No match"
@@ -979,7 +1076,7 @@ if __name__=="__main__":
         autoGroups = [] # an array of tuples: (groupName, AutoSecurity)
         for g in viewGroups:
             sT = g.getAutoSecurities()
-            isOK = True #If ANYTHING is tradable and auto exec style, other than CFDs, it is not OK.
+            isOK = True #If ANYTHING is Tradeable and auto exec style, other than CFDs, it is not OK.
             for s in sT:  
                 if s.name[0:3]=="CFD":
                     continue
@@ -992,7 +1089,7 @@ if __name__=="__main__":
         print "BAD GROUPS ARE:"
         print autoGroups
             
-
+        """
 
 
         #print "CANnot see {} of {} groups ({}%)".format(i, len(gl), i*100/len(gl))
@@ -1029,40 +1126,54 @@ if __name__=="__main__":
             print m.toString()
     """
 
+    # #########
+    # print comma separated list of groups with quotes around group names.
     """
-    #print comma separated list of groups with quotes around group names.
-    gl = mtSettings.getGroupList()
+    gl = mtSettings.getGroupList(",!umam_*,!*umam_*,!Umam_*,!Dead*,!*Signals*,!datacenter,!manager,!*Demo*,!*demo*,!GCM-Elite*,!US*,!*gent*,!PTFX*,!WFX-*-USD,*,")
+    print "505 - ALL"
+    print "("
+    for g in gl:
+        print "\'{}\',".format(g.name)
+    print ")"
+
+    gl = mtSettings.getGroupList(",YDX-Mic-EUR,YDX-Mic-EUR-2,YDX-Mic-USD,YDX-Mic-USD-2,YDX-Pro-EUR,YDX-Pro-USD,YDX-Pro-USD-2,YDX-Sclp-USD,YDX-Std-USD-2,CITI-Test,PJT*,*PJT*,Iam-Stnd-2,Iam-Micro-2,Standard-2,Standard-GBP-2,Standard-EUR-2,Micro-GBP-2,Micro-EUR-2,Iam-Mic-GBP-2,Iam-Mic-EUR-2,Iam-Std-EUR-2,Iam-Std-GBP-2,Micro-2,Micro-AUD-2,Standard-AUD-2,Iam-Micro-AUD-2,Micro-RMP,Std-PNY1p5-USD,Std-PNY1p5-EUR,Std-NOW-EUR,Iam-Std-CAD-2,")
+    print "506 - A Book"
+    print "("
+    for g in gl:
+        print "\'{}\',".format(g.name)
+    print ")"
+
+    gl = mtSettings.getGroupList(",!umam_*,!*umam_*,!Umam_*,!Dead*,!*Signals*,!datacenter,!manager,!*Demo*,!*demo*,!GCM-Elite*,!US*,!*gent*,!PTFX*,!WFX-*-USD,!YDX-Mic-EUR,!YDX-Mic-EUR-2,!YDX-Mic-USD,!YDX-Mic-USD-2,!YDX-Pro-EUR,!YDX-Pro-USD,!YDX-Pro-USD-2,!YDX-Sclp-USD,!YDX-Std-USD-2,!CITI-Test,!PJT*,!*PJT*,!Iam-Stnd-2,!Iam-Micro-2,!Standard-2,!Standard-GBP-2,!Standard-EUR-2,!Micro-GBP-2,!Micro-EUR-2,!Iam-Mic-GBP-2,!Iam-Mic-EUR-2,!Iam-Std-EUR-2,!Iam-Std-GBP-2,!Micro-2,!Micro-AUD-2,!Standard-AUD-2,!Iam-Micro-AUD-2,!Micro-RMP,!Std-PNY1p5-USD,!Std-PNY1p5-EUR,!Std-NOW-EUR,!Iam-Std-CAD-2,*,")
+    print "507 - BBook"
     print "("
     for g in gl:
         print "\'{}\',".format(g.name)
     print ")"
     """
     
-    
     # #########
     # COVERAGE TESTS AND DISPLAYS
     """
     gl = mtSettings.getGroupList()
-    bridgeMans = [mtSettings.getManagerGroupPermissions(manToFind=100), mtSettings.getManagerGroupPermissions(manToFind=101)]        
+    bridgeMans = [mtSettings.getManagerGroupPermissions(manToFind=103), mtSettings.getManagerGroupPermissions(manToFind=505)]        
     resDict = compareCoverage(bridgeMans, gl)
     
-    print "{:17} | {:5} | {:5} |".format("Group Name", bridgeMans[0].num, bridgeMans[1].num)
+    print "{:17} | {:5} | {:5} |".format("Group_Name", bridgeMans[0].num, bridgeMans[1].num)
     for gname in resDict.keys():
         print "{:17} | {:5} | {:5} |".format(gname, resDict[gname][bridgeMans[0].num], resDict[gname][bridgeMans[1].num])
 
     dcFlag = False
-    for gname in resDict.keys():
-        print "{} AND {} = {}".format(resDict[gname][bridgeMans[0].num], resDict[gname][bridgeMans[1].num], resDict[gname][bridgeMans[0].num] and resDict[gname][bridgeMans[1].num])
-        if resDict[gname][bridgeMans[0].num] and resDict[gname][bridgeMans[1].num]:
-            print "DOUBLE COVERAGE FOR: "+gname
+    for gname in sorted(resDict.keys()):
+        #print "{} AND {} = {}".format(resDict[gname][bridgeMans[0].num], resDict[gname][bridgeMans[1].num], resDict[gname][bridgeMans[0].num] ^ resDict[gname][bridgeMans[1].num])
+        if resDict[gname][bridgeMans[0].num] ^ resDict[gname][bridgeMans[1].num]:
+            print "COVERAGE MISMATCH FOR: "+gname
+            print "{} AND {} = {}".format(resDict[gname][bridgeMans[0].num], resDict[gname][bridgeMans[1].num], resDict[gname][bridgeMans[0].num] ^ resDict[gname][bridgeMans[1].num])
             dcFlag=True
     if not dcFlag:
         print "No double coverages"
     """
-    #while True:
-    #    if execMenuChoice(setUpMenu(), mtSettings)=="Q":
-    #        break;    
-    #print gl[0].secTable    
-    #importSettings()
+
+    
+
     toScreen("Goodbye.")
     
